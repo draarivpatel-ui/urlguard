@@ -1,0 +1,50 @@
+{
+  "name": "urlguard",
+  "version": "0.1.0",
+  "description": "Zero-dependency RFC-aware SSRF, private-IP, DNS-rebinding and redirect-chain guard for Node.js and edge runtimes",
+  "type": "module",
+  "license": "MIT",
+  "main": "./cjs/index.cjs",
+  "module": "./src/index.mjs",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "import": "./src/index.mjs",
+      "require": "./cjs/index.cjs"
+    },
+    "./runtime/node": {
+      "types": "./types/runtime-node.d.ts",
+      "import": "./src/runtime-node.mjs",
+      "require": "./cjs/runtime-node.cjs"
+    }
+  },
+  "files": [
+    "src/",
+    "cjs/",
+    "types/",
+    "README.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build-cjs.mjs",
+    "test": "node --test",
+    "test:all": "node scripts/build-cjs.mjs && node --test"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "keywords": [
+    "ssrf",
+    "url",
+    "security",
+    "ipv6",
+    "dns-rebinding",
+    "redirect",
+    "zero-dependency"
+  ]
+}
