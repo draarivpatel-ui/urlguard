@@ -12,7 +12,7 @@ cd urlguard
 npm test
 ```
 
-All tests run with the built-in Node test runner. Use Node 20 or newer.
+All tests run with the built-in Node test runner. Use Node 18 or newer.
 
 ## Test command
 

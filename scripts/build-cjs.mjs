@@ -1,7 +1,7 @@
 // Generate CommonJS modules from src/*.mjs with a small, dependency-free
 // transform. The library only uses static import/export syntax that this
 // transform supports. Run: node scripts/build-cjs.mjs
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -75,7 +75,34 @@ function transform(source) {
   return `${out}\n`;
 }
 
-for (const name of MODULES) {
-  writeFileSync(join(cjsDir, `${name}.cjs`), transform(readFileSync(join(srcDir, `${name}.mjs`), 'utf8')));
+function normalizeLf(text) {
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
-console.log(`Generated ${MODULES.length} CommonJS modules in cjs/`);
+
+function outputFor(name) {
+  const source = normalizeLf(readFileSync(join(srcDir, `${name}.mjs`), 'utf8'));
+  return normalizeLf(transform(source));
+}
+
+const check = process.argv.includes('--check');
+const outdated = [];
+
+for (const name of MODULES) {
+  const target = join(cjsDir, `${name}.cjs`);
+  const output = outputFor(name);
+  if (!check) {
+    writeFileSync(target, output);
+  } else if (!existsSync(target) || readFileSync(target, 'utf8') !== output) {
+    outdated.push(`cjs/${name}.cjs`);
+  }
+}
+
+if (check) {
+  if (outdated.length > 0) {
+    console.error(`CommonJS artifacts are out of date: ${outdated.join(', ')}`);
+    process.exit(1);
+  }
+  console.log(`Verified ${MODULES.length} CommonJS modules in cjs/`);
+} else {
+  console.log(`Generated ${MODULES.length} CommonJS modules in cjs/`);
+}

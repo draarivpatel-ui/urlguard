@@ -1,19 +1,19 @@
-# urlguard
+# @aarivbuildz/urlguard
 
-A zero-dependency, RFC-aware URL security guard for Node.js 20+ and edge runtimes. It answers one question correctly: **is this URL, and every hop of its redirect chain, safe for my server or agent to follow?**
+A zero-dependency, RFC-aware URL security guard for Node.js 18+ and edge runtimes. It answers one question correctly: **is this URL, and every hop of its redirect chain, safe for my server or agent to follow?**
 
 Ships pure ESM, generated CommonJS and strict TypeScript definitions. No runtime dependencies, no install step beyond copying the package, no network I/O unless you inject a DNS resolver.
 
 ## Install
 
 ```sh
-npm install urlguard
+npm install @aarivbuildz/urlguard
 ```
 
 ## Quick start
 
 ```js
-import { validateUrl, assertSafeUrl } from 'urlguard';
+import { validateUrl, assertSafeUrl } from '@aarivbuildz/urlguard';
 
 const result = validateUrl('https://example.com/api');
 if (result.ok) {
@@ -32,7 +32,7 @@ try {
 CommonJS works identically:
 
 ```js
-const { validateUrl } = require('urlguard');
+const { validateUrl } = require('@aarivbuildz/urlguard');
 ```
 
 ## API
@@ -53,7 +53,7 @@ const { validateUrl } = require('urlguard');
 DNS is opt-in. Pass a resolver function; the library never imports `node:dns` on its own.
 
 ```js
-import { nodeResolve } from 'urlguard/runtime/node';
+import { nodeResolve } from '@aarivbuildz/urlguard/runtime/node';
 
 const opts = {
   allowedSchemes: ['https:'],
@@ -123,6 +123,10 @@ npm test
 ```
 
 The suite runs 206 tests with `node --test` and requires no dependencies. It contains deterministic bypass vectors, seeded fuzz/property cases, adversarial redirect and DNS cases, CJS and ESM parity checks, and package hygiene checks. Both module formats are exercised in Node.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and [GOOD_FIRST_ISSUES.md](GOOD_FIRST_ISSUES.md).
 
 ## License
 

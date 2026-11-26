@@ -1,5 +1,5 @@
 {
-  "name": "urlguard",
+  "name": "@aarivbuildz/urlguard",
   "version": "0.1.0",
   "description": "Zero-dependency RFC-aware SSRF, private-IP, DNS-rebinding and redirect-chain guard for Node.js and edge runtimes",
   "type": "module",
@@ -26,15 +26,16 @@
     "README.md",
     "SECURITY.md",
     "CONTRIBUTING.md",
+    "GOOD_FIRST_ISSUES.md",
     "LICENSE"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=18.0.0"
   },
   "scripts": {
     "build": "node scripts/build-cjs.mjs",
-    "test": "node --test",
-    "test:all": "node scripts/build-cjs.mjs && node --test"
+    "test": "node scripts/run-tests.mjs tests/*.test.mjs",
+    "test:all": "node scripts/build-cjs.mjs && node scripts/run-tests.mjs tests/*.test.mjs"
   },
   "dependencies": {},
   "devDependencies": {},
@@ -46,5 +47,16 @@
     "dns-rebinding",
     "redirect",
     "zero-dependency"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/draarivpatel-ui/urlguard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/draarivpatel-ui/urlguard/issues"
+  },
+  "homepage": "https://github.com/draarivpatel-ui/urlguard#readme",
+  "publishConfig": {
+    "access": "public"
+  }
 }
