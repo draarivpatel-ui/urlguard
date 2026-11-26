@@ -3,7 +3,8 @@
 export { UrlGuardError, guardError } from './errors.mjs';
 export {
   parseIpv4, parseIpv6, normalizeIp, classifyIp, mappedIpv4,
-  sixToFourIpv4, nat64Ipv4, isTeredo, formatIpv6, ipv4ToUint32,
+  sixToFourIpv4, nat64Ipv4, isNat64LocalUse, ipv4CompatibleIpv4,
+  siitIpv4, isTeredo, teredoClientIpv4, formatIpv6, ipv4ToUint32,
   parseCidr, cidrContains,
 } from './ip.mjs';
 export {

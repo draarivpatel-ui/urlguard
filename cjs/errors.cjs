@@ -13,6 +13,7 @@ function safeString(value) {
   }
 }
 
+/** Mask credentials and control characters so a result or error never leaks them. */
 function redactInput(value) {
   let text = safeString(value).replace(CONTROL_RE, '?');
   text = text.replace(/([a-z][a-z\d+.-]*:\/\/)([^/@\s]*@)/i, '$1[redacted]@');
@@ -45,6 +46,7 @@ function fail(code, reason, input) {
   return { ok: false, code, detail: reason, input: redactInput(input) };
 }
 
+exports.redactInput = redactInput;
 exports.UrlGuardError = UrlGuardError;
 exports.guardError = guardError;
 exports.fail = fail;

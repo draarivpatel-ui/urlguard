@@ -2,7 +2,7 @@
 // The WHATWG parser is used only AFTER hostile-input checks, because it
 // normalizes many SSRF payloads (decimal IP, shorthand, backslashes) silently.
 
-const { guardError, fail } = require('./errors.cjs');
+const { guardError, fail, redactInput } = require('./errors.cjs');
 const { classifyIp, normalizeIp, cidrContains } = require('./ip.cjs');
 
 const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
@@ -23,13 +23,16 @@ const BLOCKED_HOST_SUFFIXES = [
 const PUBLIC_SUFFIXES = new Set([
   'com', 'net', 'org', 'edu', 'gov', 'mil', 'int', 'io', 'co', 'ai', 'app', 'dev',
   'xyz', 'info', 'biz', 'me', 'tv', 'us', 'uk', 'de', 'fr', 'jp', 'cn', 'in', 'au',
-  'ca', 'br', 'nl', 'se', 'no', 'fi', 'es', 'it', 'ru', 'ch', '.at', 'be', 'dk',
+  'ca', 'br', 'nl', 'se', 'no', 'fi', 'es', 'it', 'ru', 'ch', 'at', 'be', 'dk',
   'co.uk', 'org.uk', 'com.au', 'co.jp', 'co.nz', 'com.br', 'co.in',
 ]);
 
 function normalizeSchemes(schemes) {
+  const list = typeof schemes === 'string'
+    ? [schemes]
+    : (Array.isArray(schemes) ? schemes : DEFAULT_SCHEMES);
   const result = [];
-  for (const raw of schemes) {
+  for (const raw of list) {
     if (typeof raw !== 'string') continue;
     let scheme = raw.trim().toLowerCase();
     if (!scheme) continue;
@@ -40,27 +43,52 @@ function normalizeSchemes(schemes) {
   return Array.from(new Set(result));
 }
 
+/**
+ * Read an option only when it is an own property. A polluted Object.prototype
+ * must never be able to weaken a policy, inject a resolver or swap fetch.
+ */
+function ownOption(source, key) {
+  if (source === null || typeof source !== 'object') return undefined;
+  return Object.hasOwn(source, key) ? source[key] : undefined;
+}
+
+function copyStrings(value) {
+  return Array.isArray(value) ? value.filter((entry) => typeof entry === 'string') : [];
+}
+
+function normalizeHostPolicy(policy) {
+  const source = policy && typeof policy === 'object' ? policy : {};
+  return {
+    allow: copyStrings(ownOption(source, 'allow')),
+    deny: copyStrings(ownOption(source, 'deny')),
+    allowPublicSuffix: ownOption(source, 'allowPublicSuffix') === true,
+  };
+}
+
 function normalizeOptions(options) {
   const opts = options && typeof options === 'object' ? options : {};
-  const allowedSchemes = normalizeSchemes(opts.allowedSchemes || DEFAULT_SCHEMES);
-  const allowedPorts = opts.allowedPorts === undefined ? 'default-only' : opts.allowedPorts;
-  const hostPolicy = opts.hostPolicy && typeof opts.hostPolicy === 'object' ? opts.hostPolicy : {};
+  const allowedSchemes = normalizeSchemes(ownOption(opts, 'allowedSchemes'));
+  const rawPorts = ownOption(opts, 'allowedPorts');
+  const allowedPorts = rawPorts === undefined ? 'default-only' : rawPorts;
+  const maxInputLength = ownOption(opts, 'maxInputLength');
+  const rebindDelayMs = ownOption(opts, 'rebindDelayMs');
+  const maxRedirects = ownOption(opts, 'maxRedirects');
   return {
     allowedSchemes,
-    allowUserinfo: opts.allowUserinfo === true,
-    allowedPorts,
-    hostPolicy,
-    maxInputLength: Number.isInteger(opts.maxInputLength) && opts.maxInputLength > 0
-      ? opts.maxInputLength : DEFAULT_MAX_INPUT_LENGTH,
-    idna: opts.idna === 'allow-unicode' ? 'allow-unicode' : 'ascii-only',
-    allowCidrs: Array.isArray(opts.allowCidrs) ? opts.allowCidrs : [],
-    denyCidrs: Array.isArray(opts.denyCidrs) ? opts.denyCidrs : [],
-    dns: opts.dns,
-    checkRebinding: opts.checkRebinding === true,
-    rebindDelayMs: Number.isFinite(opts.rebindDelayMs) && opts.rebindDelayMs >= 0
-      ? opts.rebindDelayMs : 50,
-    maxRedirects: Number.isInteger(opts.maxRedirects) && opts.maxRedirects >= 0
-      ? opts.maxRedirects : 5,
+    allowUserinfo: ownOption(opts, 'allowUserinfo') === true,
+    allowedPorts: Array.isArray(allowedPorts) ? allowedPorts.slice() : allowedPorts,
+    hostPolicy: normalizeHostPolicy(ownOption(opts, 'hostPolicy')),
+    maxInputLength: Number.isInteger(maxInputLength) && maxInputLength > 0
+      ? maxInputLength : DEFAULT_MAX_INPUT_LENGTH,
+    idna: ownOption(opts, 'idna') === 'allow-unicode' ? 'allow-unicode' : 'ascii-only',
+    allowCidrs: copyStrings(ownOption(opts, 'allowCidrs')),
+    denyCidrs: copyStrings(ownOption(opts, 'denyCidrs')),
+    dns: ownOption(opts, 'dns'),
+    checkRebinding: ownOption(opts, 'checkRebinding') === true,
+    rebindDelayMs: Number.isFinite(rebindDelayMs) && rebindDelayMs >= 0
+      ? rebindDelayMs : 50,
+    maxRedirects: Number.isInteger(maxRedirects) && maxRedirects >= 0
+      ? maxRedirects : 5,
   };
 }
 
@@ -78,9 +106,15 @@ function precheck(input, opts) {
   return null;
 }
 
+function stripTrailingDots(host) {
+  let result = host;
+  while (result.endsWith('.')) result = result.slice(0, -1);
+  return result;
+}
+
 function hostPatternMatches(host, pattern) {
   if (typeof pattern !== 'string' || !pattern) return false;
-  let normalized = pattern.trim().toLowerCase().replace(/\.$/, '');
+  let normalized = stripTrailingDots(pattern.trim().toLowerCase());
   if (!normalized) return false;
   if (normalized.startsWith('*.')) normalized = normalized.slice(2);
   else if (normalized.startsWith('.')) { /* apex plus subdomains */ }
@@ -100,7 +134,7 @@ function isPublicSuffixPattern(pattern) {
 }
 
 function checkHostPolicy(hostname, hostPolicy) {
-  const host = hostname.toLowerCase().replace(/\.$/, '');
+  const host = stripTrailingDots(hostname.toLowerCase());
   const deny = Array.isArray(hostPolicy.deny) ? hostPolicy.deny : [];
   const allow = Array.isArray(hostPolicy.allow) ? hostPolicy.allow : [];
   if (BLOCKED_HOSTNAMES.has(host)) return fail('HOST_DENIED', 'hostname is on the built-in deny list', host);
@@ -169,8 +203,17 @@ function validateUrl(input, options) {
 
   let hostname = url.hostname.toLowerCase();
   if (hostname.startsWith('[') && hostname.endsWith(']')) hostname = hostname.slice(1, -1);
-  if (hostname.endsWith('.')) hostname = hostname.slice(0, -1);
+  // A single trailing dot is a valid root-qualified FQDN. A second one leaves
+  // an empty label that resolvers normalize inconsistently, so it is rejected.
+  if (hostname.endsWith('.')) {
+    hostname = hostname.slice(0, -1);
+    if (hostname.endsWith('.')) {
+      return fail('INVALID_URL', 'hostname contains consecutive dots', input);
+    }
+  }
   if (!hostname) return fail('INVALID_URL', 'empty hostname', input);
+  // A leading dot is an empty first label, which resolvers normalize inconsistently.
+  if (hostname.startsWith('.')) return fail('INVALID_URL', 'hostname starts with an empty label', input);
   if (hostname.includes('%')) return fail('INVALID_URL', 'percent-encoded hostname is not allowed', input);
   if (opts.idna === 'ascii-only' && /[^\x21-\x7e]/.test(hostname)) {
     return fail('UNSUPPORTED_IDNA', 'unicode hostname requires idna: allow-unicode', input);
@@ -196,7 +239,7 @@ function validateUrl(input, options) {
   }
 
   const policyFailure = checkHostPolicy(hostname, hostPolicyOrEmpty(opts));
-  if (policyFailure) return { ...policyFailure, input };
+  if (policyFailure) return { ...policyFailure, input: redactInput(input) };
 
   const defaultPort = DEFAULT_PORTS[url.protocol];
   const port = url.port ? Number(url.port) : defaultPort;
@@ -251,19 +294,41 @@ function assertSafeUrl(input, options) {
 function isPublicHostname(hostname, options) {
   if (typeof hostname !== 'string' || !hostname) return false;
   const opts = normalizeOptions(options);
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  const host = stripTrailingDots(hostname.toLowerCase().replace(/^\[|\]$/g, ''));
+  if (!host || host.startsWith('.') || host.includes('..')) return false;
+  // Only plain ASCII host characters count. Unicode dot and digit lookalikes
+  // are folded into a different host by an IDNA-aware parser downstream, so a
+  // policy check on the raw string would approve a host that resolves elsewhere.
+  if (!/^[a-z0-9._:-]+$/.test(host)) return false;
   const ipClass = classifyIp(host);
-  // IP literals must be public; plain DNS names are allowed here and verified at resolution time.
-  if (ipClass !== 'public' && ipClass !== 'invalid') return false;
+  if (host.includes(':')) {
+    // A colon-bearing host must be a public IPv6 literal, never a DNS name.
+    if (ipClass !== 'public') return false;
+  } else if (ipClass !== 'public' && ipClass !== 'invalid') {
+    // IP literals must be public; plain DNS names are verified at resolution time.
+    return false;
+  }
   for (const cidr of opts.denyCidrs) if (cidrContains(cidr, host)) return false;
   if (opts.allowCidrs.length > 0 && !opts.allowCidrs.some((cidr) => cidrContains(cidr, host))) return false;
   return checkHostPolicy(host, hostPolicyOrEmpty(opts)) === null;
 }
 
+/** Freeze a normalized policy, including every nested array, so a guard cannot drift. */
+function freezePolicy(opts) {
+  Object.freeze(opts.allowedSchemes);
+  if (Array.isArray(opts.allowedPorts)) Object.freeze(opts.allowedPorts);
+  Object.freeze(opts.allowCidrs);
+  Object.freeze(opts.denyCidrs);
+  Object.freeze(opts.hostPolicy.allow);
+  Object.freeze(opts.hostPolicy.deny);
+  Object.freeze(opts.hostPolicy);
+  Object.freeze(opts);
+  return opts;
+}
+
 /** Compile a reusable policy object. */
 function createGuard(options) {
-  const opts = normalizeOptions(options);
-  Object.freeze(opts);
+  const opts = freezePolicy(normalizeOptions(options));
   return {
     validate: (input) => validateUrl(input, opts),
     assert: (input) => assertSafeUrl(input, opts),
@@ -275,6 +340,7 @@ function createGuard(options) {
 
 
 exports.normalizeOptions = normalizeOptions;
+exports.ownOption = ownOption;
 exports.validateUrl = validateUrl;
 exports.assertSafeUrl = assertSafeUrl;
 exports.isPublicHostname = isPublicHostname;

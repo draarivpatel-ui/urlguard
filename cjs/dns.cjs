@@ -3,6 +3,7 @@
 
 const { fail } = require('./errors.cjs');
 const { classifyIp } = require('./ip.cjs');
+const { ownOption } = require('./url.cjs');
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -11,11 +12,14 @@ function delay(ms) {
 function normalizeDnsOptions(options, base) {
   const opts = base && typeof base === 'object' ? base : {};
   const incoming = options && typeof options === 'object' ? options : {};
-  const dns = incoming.dns !== undefined ? incoming.dns : opts.dns;
+  const incomingDns = ownOption(incoming, 'dns');
+  const incomingRebind = ownOption(incoming, 'checkRebinding');
+  const incomingDelay = ownOption(incoming, 'rebindDelayMs');
+  const dns = incomingDns !== undefined ? incomingDns : ownOption(opts, 'dns');
   return {
     dns,
-    checkRebinding: incoming.checkRebinding !== undefined ? incoming.checkRebinding : opts.checkRebinding === true,
-    rebindDelayMs: incoming.rebindDelayMs !== undefined ? incoming.rebindDelayMs : (opts.rebindDelayMs ?? 50),
+    checkRebinding: incomingRebind !== undefined ? incomingRebind : ownOption(opts, 'checkRebinding') === true,
+    rebindDelayMs: incomingDelay !== undefined ? incomingDelay : (ownOption(opts, 'rebindDelayMs') ?? 50),
   };
 }
 

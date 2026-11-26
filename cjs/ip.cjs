@@ -165,9 +165,43 @@ function nat64Ipv4(groups) {
   return fromUint32(((groups[6] << 16) | groups[7]) >>> 0);
 }
 
+/**
+ * Detect the RFC 8215 local-use NAT64 prefix 64:ff9b:1::/48.
+ * It is only valid inside a local network, so it is never a public destination.
+ */
+function isNat64LocalUse(groups) {
+  return !!groups && groups.length === 8
+    && groups[0] === 0x0064 && groups[1] === 0xff9b && groups[2] === 0x0001;
+}
+
+/** Extract the embedded IPv4 from an IPv4-compatible (::/96) address. */
+function ipv4CompatibleIpv4(groups) {
+  if (!groups || groups.length !== 8) return null;
+  for (let i = 0; i < 6; i += 1) if (groups[i] !== 0) return null;
+  return fromUint32(((groups[6] << 16) | groups[7]) >>> 0);
+}
+
+/** Extract the embedded IPv4 from an IPv4-translated SIIT (::ffff:0:0:0/96) address. */
+function siitIpv4(groups) {
+  if (!groups || groups.length !== 8) return null;
+  if (groups[0] !== 0 || groups[1] !== 0 || groups[2] !== 0 || groups[3] !== 0) return null;
+  if (groups[4] !== 0xffff || groups[5] !== 0) return null;
+  return fromUint32(((groups[6] << 16) | groups[7]) >>> 0);
+}
+
 /** Classify a Teredo (2001:0000::/32) client/server address. */
 function isTeredo(groups) {
   return !!groups && groups.length === 8 && groups[0] === 0x2001 && groups[1] === 0x0000;
+}
+
+/**
+ * Decode the obfuscated client IPv4 of a Teredo address (XOR with 0xffffffff).
+ * Example: 2001:0:4136:e378:8000:63bf:3fff:fdd2 decodes to 192.0.2.45.
+ */
+function teredoClientIpv4(groups) {
+  if (!isTeredo(groups)) return null;
+  const obfuscated = ((groups[6] << 16) | groups[7]) >>> 0;
+  return fromUint32((obfuscated ^ 0xffffffff) >>> 0);
 }
 
 /** Canonicalize an IPv6 address to lowercase RFC 5952 compressed form. */
@@ -195,6 +229,7 @@ const IPV4_RANGES = [
   // Specific ranges first so classification names are precise.
   { name: 'cloud-metadata', base: [169, 254, 169, 254], bits: 32 },
   { name: 'alibaba-metadata', base: [100, 100, 100, 200], bits: 32 },
+  { name: 'azure-platform', base: [168, 63, 129, 16], bits: 32 },
   { name: 'broadcast', base: [255, 255, 255, 255], bits: 32 },
   { name: 'documentation-1', base: [192, 0, 2, 0], bits: 24 },
   { name: 'documentation-2', base: [198, 51, 100, 0], bits: 24 },
@@ -214,10 +249,14 @@ const IPV4_RANGES = [
 const IPV6_RANGES = [
   { name: 'unspecified', base: [0, 0, 0, 0, 0, 0, 0, 0], bits: 128 },
   { name: 'loopback', base: [0, 0, 0, 0, 0, 0, 0, 1], bits: 128 },
+  // 0000::/8 is reserved by the IETF. Every transition prefix inside it is
+  // decoded before this list runs, so a hit here is an address no host routes.
+  { name: 'reserved', base: [0, 0, 0, 0, 0, 0, 0, 0], bits: 8 },
   { name: 'link-local', base: [0xfe80, 0, 0, 0, 0, 0, 0, 0], bits: 10 },
   { name: 'unique-local', base: [0xfc00, 0, 0, 0, 0, 0, 0, 0], bits: 7 },
   { name: 'multicast', base: [0xff00, 0, 0, 0, 0, 0, 0, 0], bits: 8 },
   { name: 'documentation', base: [0x2001, 0x0db8, 0, 0, 0, 0, 0, 0], bits: 32 },
+  { name: 'documentation-2', base: [0x3fff, 0, 0, 0, 0, 0, 0, 0], bits: 20 },
   { name: 'benchmark', base: [0x2001, 0x0002, 0, 0, 0, 0, 0, 0], bits: 32 },
   { name: 'discard-only', base: [0x0100, 0, 0, 0, 0, 0, 0, 0], bits: 64 },
   { name: 'aws-metadata', base: [0xfd00, 0xec2, 0, 0, 0, 0, 0, 0x254], bits: 0 },
@@ -255,7 +294,17 @@ function classifyIp(host) {
     if (sixFour !== null) return classifyIpv4Value(sixFour);
     const nat = nat64Ipv4(groups);
     if (nat !== null) return classifyIpv4Value(nat);
+    const siit = siitIpv4(groups);
+    if (siit !== null) return classifyIpv4Value(siit);
+    if (isNat64LocalUse(groups)) return 'nat64-local-use';
     if (isTeredo(groups)) return 'private';
+    const compatible = ipv4CompatibleIpv4(groups);
+    if (compatible !== null) {
+      // :: and ::1 are RFC 4291 special forms, not IPv4-compatible addresses.
+      if (groups.every((g) => g === 0)) return 'unspecified';
+      if (groups[7] === 1 && groups.slice(0, 7).every((g) => g === 0)) return 'loopback';
+      return classifyIpv4Value(compatible);
+    }
     for (const range of IPV6_RANGES) {
       if (range.bits === 0) {
         if (range.name === 'aws-metadata' && groups.every((g, i) => g === AWS_METADATA_FULL[i])) return range.name;
@@ -312,11 +361,33 @@ function parseCidr(cidr) {
   return value === null ? null : { family: 4, value, bits };
 }
 
+/**
+ * Return the IPv4 address carried by any transition form the classifier
+ * decodes, so an IPv4 CIDR list cannot be evaded with a mapped or translated
+ * spelling of the same destination.
+ */
+function embeddedIpv4(groups) {
+  if (!groups) return null;
+  const mapped = mappedIpv4(groups);
+  if (mapped !== null) return mapped;
+  const sixFour = sixToFourIpv4(groups);
+  if (sixFour !== null) return sixFour;
+  const nat = nat64Ipv4(groups);
+  if (nat !== null) return nat;
+  const siit = siitIpv4(groups);
+  if (siit !== null) return siit;
+  return ipv4CompatibleIpv4(groups);
+}
+
 function cidrContains(cidr, address) {
   const parsed = parseCidr(cidr);
   if (!parsed) return false;
   if (parsed.family === 4) {
-    const ipv4 = parseIpv4(address);
+    let ipv4 = parseIpv4(address);
+    if (ipv4 === null) {
+      const groups = parseIpv6(address);
+      ipv4 = groups ? embeddedIpv4(groups) : null;
+    }
     if (ipv4 === null) return false;
     const value = ipv4ToUint32(ipv4);
     return value !== null && prefixMatch(value, parsed.value, parsed.bits, 32);
@@ -332,7 +403,11 @@ exports.parseIpv6 = parseIpv6;
 exports.mappedIpv4 = mappedIpv4;
 exports.sixToFourIpv4 = sixToFourIpv4;
 exports.nat64Ipv4 = nat64Ipv4;
+exports.isNat64LocalUse = isNat64LocalUse;
+exports.ipv4CompatibleIpv4 = ipv4CompatibleIpv4;
+exports.siitIpv4 = siitIpv4;
 exports.isTeredo = isTeredo;
+exports.teredoClientIpv4 = teredoClientIpv4;
 exports.formatIpv6 = formatIpv6;
 exports.classifyIp = classifyIp;
 exports.normalizeIp = normalizeIp;

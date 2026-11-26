@@ -56,7 +56,8 @@ export interface ValidationSuccess {
   readonly url: URL;
   readonly normalized: string;
   readonly hostname: string;
-  readonly port: number;
+  /** Explicit or default port. Undefined for custom schemes with no port. */
+  readonly port: number | undefined;
   readonly ipClass: string;
   readonly normalizedIp: string | null;
 }
@@ -73,7 +74,7 @@ export type ValidationResult = ValidationSuccess | ValidationFailure;
 export interface HopResult {
   readonly url: string;
   readonly hostname: string;
-  readonly port: number;
+  readonly port: number | undefined;
   readonly addresses: readonly string[];
   readonly pinnedIp: string | null;
   readonly crossOrigin: boolean;
@@ -127,7 +128,7 @@ export interface IpParseResult6 {
 export declare function validateUrl(input: unknown, options?: ValidateOptions): ValidationResult;
 export declare function assertSafeUrl(input: unknown, options?: ValidateOptions): ValidationSuccess;
 export declare function validateRedirectChain(
-  urls: Iterable<string>,
+  urls: string | Iterable<string>,
   options?: ValidateOptions
 ): Promise<ChainResult>;
 export declare function createGuard(options?: ValidateOptions): Guard;
@@ -144,17 +145,42 @@ export declare function classifyIp(host: string): string;
 export declare function mappedIpv4(groups: readonly number[] | null): string | null;
 export declare function sixToFourIpv4(groups: readonly number[] | null): string | null;
 export declare function nat64Ipv4(groups: readonly number[] | null): string | null;
+export declare function isNat64LocalUse(groups: readonly number[] | null): boolean;
+export declare function ipv4CompatibleIpv4(groups: readonly number[] | null): string | null;
+export declare function siitIpv4(groups: readonly number[] | null): string | null;
 export declare function isTeredo(groups: readonly number[] | null): boolean;
+export declare function teredoClientIpv4(groups: readonly number[] | null): string | null;
 export declare function formatIpv6(groups: readonly number[] | null): string | null;
 export declare function ipv4ToUint32(ip: string): number | null;
-export declare function parseCidr(cidr: string): { family: 4 | 6; bits: number } | null;
+
+export type ParsedCidr =
+  | { readonly family: 4; readonly value: number; readonly bits: number }
+  | { readonly family: 6; readonly groups: readonly number[]; readonly bits: number };
+
+export declare function parseCidr(cidr: string): ParsedCidr | null;
 export declare function cidrContains(cidr: string, address: string): boolean;
+
+export interface ResolveSuccess {
+  readonly ok: true;
+  readonly addresses: readonly string[];
+  readonly skipped?: boolean;
+  readonly pinnedIp?: string;
+}
+
+export interface ResolveFailure {
+  readonly ok: false;
+  readonly code: UrlGuardErrorCode;
+  readonly detail: string;
+  readonly input?: string;
+}
+
+export type ResolveResult = ResolveSuccess | ResolveFailure;
 
 export declare function resolveSafe(
   hostname: string,
   options?: ValidateOptions,
   baseOptions?: ValidateOptions
-): Promise<ValidationResult & { addresses?: readonly string[]; pinnedIp?: string; skipped?: boolean }>;
+): Promise<ResolveResult>;
 
 export declare const DEFAULT_OPTIONS: Readonly<{
   readonly allowedSchemes: readonly ['https:'];
