@@ -4,12 +4,14 @@ Thanks for helping improve urlguard. Security correctness takes priority over fe
 
 ## Development setup
 
-No install step is required. The project has zero runtime and zero development dependencies.
+No install step is required for the core suite. The project has zero runtime dependencies; fast-check fuzz tooling is development-only.
 
 ```sh
 git clone <repository-url>
 cd urlguard
 npm test
+npm ci
+npm run test:fuzz
 ```
 
 All tests run with the built-in Node test runner. Use Node 18 or newer.

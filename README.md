@@ -124,7 +124,7 @@ const guard = createGuard({
 npm test
 ```
 
-The suite runs 206 tests with `node --test` and requires no dependencies. It contains deterministic bypass vectors, seeded fuzz/property cases, adversarial redirect and DNS cases, CJS and ESM parity checks, and package hygiene checks. Both module formats are exercised in Node.
+The core suite runs 206 tests with `node --test` and requires no runtime dependencies. It contains deterministic bypass vectors, seeded fuzz/property cases, adversarial redirect and DNS cases, CJS and ESM parity checks, and package hygiene checks. Both module formats are exercised in Node. The separate fast-check suite runs with `npm run test:fuzz` after `npm ci`.
 
 ## Contributing
 
