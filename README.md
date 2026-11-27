@@ -1,5 +1,7 @@
 # @aarivbuildz/urlguard
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/draarivpatel-ui/urlguard/badge)](https://scorecard.dev/viewer/?uri=github.com/draarivpatel-ui/urlguard)
+
 A zero-dependency, RFC-aware URL security guard for Node.js 18+ and edge runtimes. It answers one question correctly: **is this URL, and every hop of its redirect chain, safe for my server or agent to follow?**
 
 Ships pure ESM, generated CommonJS and strict TypeScript definitions. No runtime dependencies, no install step beyond copying the package, no network I/O unless you inject a DNS resolver.
